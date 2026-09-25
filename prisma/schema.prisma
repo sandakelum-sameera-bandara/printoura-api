@@ -1,0 +1,451 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum PricingType {
+  FIXED
+  PER_UNIT
+  CUSTOM_QUOTE
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  CARD
+  KOKO
+  BANK_TRANSFER
+  CASH
+}
+
+enum FulfillmentMethod {
+  PICKUP
+  DELIVERY
+}
+
+enum QuotationStatus {
+  REQUESTED
+  REVIEWING
+  QUOTED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  COMPLETED
+  CANCELLED
+}
+
+enum ContactStatus {
+  NEW
+  READ
+  REPLIED
+  ARCHIVED
+}
+
+enum AttachmentType {
+  DESIGN
+  LOGO
+  REFERENCE
+  DOCUMENT
+  OTHER
+}
+
+
+// ============================================================
+// USER
+// ============================================================
+
+model User {
+  id           String   @id @default(uuid())@db.Uuid
+
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  phone        String?
+
+  role         Role     @default(CUSTOMER)
+  isActive     Boolean  @default(true) @map("is_active")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  orders       Order[]
+  quotations   Quotation[]
+  payments     Payment[]
+
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("users")
+}
+
+
+// ============================================================
+// CATEGORY
+// ============================================================
+
+model Category {
+  id          String    @id @default(uuid())@db.Uuid
+
+  name        String    @unique
+  slug        String    @unique
+  description String?   @db.Text
+  imageUrl    String?   @map("image_url")
+
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  services    Service[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+
+// ============================================================
+// SERVICE
+// ============================================================
+
+model Service {
+  id               String      @id @default(uuid())@db.Uuid
+
+  categoryId       String      @map("category_id")@db.Uuid
+  category         Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  name             String
+  slug             String      @unique
+
+  shortDescription String?     @map("short_description")
+  description      String?     @db.Text
+
+  pricingType      PricingType @default(CUSTOM_QUOTE) @map("pricing_type")
+
+  basePrice        Decimal?    @map("base_price") @db.Decimal(12, 2)
+  pricingUnit      String?     @map("pricing_unit")
+
+  imageUrl         String?     @map("image_url")
+
+  isFeatured       Boolean     @default(false) @map("is_featured")
+  isActive         Boolean     @default(true) @map("is_active")
+  sortOrder        Int         @default(0) @map("sort_order")
+
+  // Service-specific options.
+  //
+  // Example:
+  // {
+  //   "sizes": ["A4", "A5", "A6"],
+  //   "paperTypes": ["80gsm", "120gsm", "150gsm"],
+  //   "printing": ["Single Side", "Double Side"],
+  //   "lamination": ["None", "Matte", "Gloss"]
+  // }
+  optionConfig     Json?       @map("option_config")
+
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  orderItems       OrderItem[]
+  quotationItems   QuotationItem[]
+
+  @@index([categoryId])
+  @@index([categoryId, isActive])
+  @@index([isFeatured])
+  @@index([sortOrder])
+  @@map("services")
+}
+
+
+// ============================================================
+// ORDER
+// ============================================================
+
+model Order {
+  id                String            @id @default(uuid())@db.Uuid
+
+  orderNumber       String            @unique @map("order_number")
+
+  userId            String?           @map("user_id")@db.Uuid
+  user              User?             @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  // Customer snapshot at the time of ordering.
+  customerName      String            @map("customer_name")
+  customerEmail     String            @map("customer_email")
+  customerPhone     String            @map("customer_phone")
+
+  fulfillmentMethod FulfillmentMethod @default(PICKUP) @map("fulfillment_method")
+  deliveryAddress   String?           @db.Text @map("delivery_address")
+
+  subtotal          Decimal           @db.Decimal(12, 2)
+  deliveryFee       Decimal           @default(0) @map("delivery_fee") @db.Decimal(12, 2)
+  total             Decimal           @db.Decimal(12, 2)
+
+  status            OrderStatus       @default(PENDING)
+
+  paymentStatus     PaymentStatus     @default(PENDING) @map("payment_status")
+
+  customerNotes     String?           @db.Text @map("customer_notes")
+  adminNotes        String?           @db.Text @map("admin_notes")
+
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  items             OrderItem[]
+  payments          Payment[]
+  attachments       OrderAttachment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+
+// ============================================================
+// ORDER ITEM
+// ============================================================
+
+model OrderItem {
+  id             String   @id @default(uuid())@db.Uuid
+
+  orderId        String   @map("order_id")@db.Uuid
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  serviceId      String?  @map("service_id")@db.Uuid
+  service        Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  // Snapshot of the service when the order was created.
+  serviceName    String   @map("service_name")
+  unitPrice      Decimal  @map("unit_price") @db.Decimal(12, 2)
+  quantity       Int
+  lineTotal      Decimal  @map("line_total") @db.Decimal(12, 2)
+
+  // Customer-selected options.
+  //
+  // Example:
+  // {
+  //   "size": "A5",
+  //   "paper": "150gsm",
+  //   "printing": "Double Side",
+  //   "lamination": "Matte"
+  // }
+  customization  Json?
+
+  customerNote   String?  @db.Text @map("customer_note")
+
+  @@index([orderId])
+  @@index([serviceId])
+  @@map("order_items")
+}
+
+
+// ============================================================
+// ORDER ATTACHMENT
+// ============================================================
+
+model OrderAttachment {
+  id          String         @id @default(uuid())@db.Uuid
+
+  orderId     String         @map("order_id")@db.Uuid
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  fileName    String         @map("file_name")
+  fileUrl     String         @map("file_url")
+  fileType    String?        @map("file_type")
+  fileSize    Int?           @map("file_size")
+
+  type        AttachmentType @default(DESIGN)
+
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("order_attachments")
+}
+
+
+// ============================================================
+// PAYMENT
+// ============================================================
+
+model Payment {
+  id               String          @id @default(uuid())@db.Uuid
+
+  orderId          String          @map("order_id")@db.Uuid
+  order            Order           @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  userId           String?         @map("user_id")@db.Uuid
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  provider         PaymentProvider
+  status           PaymentStatus   @default(PENDING)
+
+  amount           Decimal         @db.Decimal(12, 2)
+  currency         String          @default("LKR")
+
+  transactionId    String?         @map("transaction_id")
+
+  paymentReference String          @unique @map("payment_reference")
+
+  gatewayResponse  Json?           @map("gateway_response")
+  failureReason    String?         @map("failure_reason")
+
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+
+// ============================================================
+// QUOTATION
+// ============================================================
+
+model Quotation {
+  id              String           @id @default(uuid())@db.Uuid
+
+  quotationNumber String           @unique @map("quotation_number")
+
+  userId          String?          @map("user_id")@db.Uuid
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  customerName    String           @map("customer_name")
+  customerEmail   String           @map("customer_email")
+  customerPhone   String           @map("customer_phone")
+
+  status          QuotationStatus  @default(REQUESTED)
+
+  customerNotes   String?          @db.Text @map("customer_notes")
+  adminNotes      String?          @db.Text @map("admin_notes")
+
+  quotedSubtotal  Decimal?         @map("quoted_subtotal") @db.Decimal(12, 2)
+  quotedTotal     Decimal?         @map("quoted_total") @db.Decimal(12, 2)
+
+  validUntil      DateTime?        @map("valid_until")
+  respondedAt     DateTime?        @map("responded_at")
+
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  items           QuotationItem[]
+  attachments     QuotationAttachment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("quotations")
+}
+
+
+// ============================================================
+// QUOTATION ITEM
+// ============================================================
+
+model QuotationItem {
+  id               String     @id @default(uuid())@db.Uuid
+
+  quotationId      String     @map("quotation_id")@db.Uuid
+  quotation        Quotation  @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  serviceId        String?    @map("service_id")@db.Uuid
+  service          Service?   @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  serviceName      String     @map("service_name")
+  quantity         Int?
+
+  details          Json?
+
+  quotedUnitPrice  Decimal?   @map("quoted_unit_price") @db.Decimal(12, 2)
+  quotedTotal      Decimal?   @map("quoted_total") @db.Decimal(12, 2)
+
+  note             String?    @db.Text
+
+  @@index([quotationId])
+  @@index([serviceId])
+  @@map("quotation_items")
+}
+
+
+// ============================================================
+// QUOTATION ATTACHMENT
+// ============================================================
+
+model QuotationAttachment {
+  id          String          @id @default(uuid())@db.Uuid
+
+  quotationId String          @map("quotation_id")@db.Uuid
+  quotation   Quotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  fileName    String          @map("file_name")
+  fileUrl     String          @map("file_url")
+  fileType    String?         @map("file_type")
+  fileSize    Int?            @map("file_size")
+
+  type        AttachmentType  @default(DESIGN)
+
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([quotationId])
+  @@map("quotation_attachments")
+}
+
+
+// ============================================================
+// CONTACT MESSAGE
+// ============================================================
+
+model ContactMessage {
+  id          String        @id @default(uuid())@db.Uuid
+
+  name        String
+  email       String
+  phone       String?
+
+  subject     String?
+  message     String        @db.Text
+
+  status      ContactStatus @default(NEW)
+
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("contact_messages")
+}
