@@ -4,6 +4,7 @@ dist/
 scratch/
 .env.local
 coverage/
+src/generated/prisma/
 
 # Logs
 logs
