@@ -104,8 +104,8 @@ categoriesRouter.post('/', validateBody(createCategorySchema), async(req, res, n
             data, 
         }); 
         res .status(201) 
-        .location(`${req.baseUrl}/${newCategory.id}`) 
-        .json(toCategoryDTO(newCategory)); 
+            .location(`${req.baseUrl}/${newCategory.id}`) 
+            .json(toCategoryDTO(newCategory)); 
     } catch (err) { 
         next(err); 
     } 
